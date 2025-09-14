@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Satellite Health Monitoring Dashboard - Mission Control</title>
+    
+    <!-- External Libraries -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Three.js - Load from multiple CDNs for reliability -->
+    <script>
+        // Try to load Three.js from multiple CDNs
+        function loadThreeJS() {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.onload = resolve;
+                script.onerror = () => {
+                    // Fallback: Load from JSDelivr
+                    const fallback = document.createElement('script');
+                    fallback.onload = resolve;
+                    fallback.onerror = () => {
+                        console.warn('Could not load Three.js - 3D visualization disabled');
+                        resolve(); // Continue without 3D
+                    };
+                    fallback.src = 'https://cdn.jsdelivr.net/npm/three@0.150.0/build/three.min.js';
+                    document.head.appendChild(fallback);
+                };
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r150/three.min.js';
+                document.head.appendChild(script);
+            });
+        }
+        
+        // Load Three.js before other scripts
+        loadThreeJS().then(() => {
+            // Three.js loaded or failed gracefully
+            console.log('Three.js loading attempted');
+        });
+    </script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0c1445 0%, #1a1f3a 100%);
+            min-height: 100vh;
+        }
+        
+        .glass-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        .status-normal { 
+            background: linear-gradient(135deg, #10b981, #059669);
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+        }
+        
+        .status-warning { 
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+        }
+        
+        .status-critical { 
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+        }
+        
+        .pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+        
+        .satellite-3d {
+            height: 400px;
+            border-radius: 16px;
+            overflow: hidden;
+        }
+        
+        .notification-toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            max-width: 400px;
+            transform: translateX(100%);
+            transition: transform 0.3s ease-in-out;
+        }
+        
+        .notification-toast.show {
+            transform: translateX(0);
+        }
+        
+        .data-point {
+            transition: all 0.3s ease;
+        }
+        
+        .loading-shimmer {
+            background: linear-gradient(90deg, rgba(255,255,255,0.1) 25%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0.1) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 2s infinite;
+        }
+        
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+        
+        .satellite-diagram {
+            width: 100%;
+            height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at center, rgba(0,0,20,0.8) 0%, rgba(0,0,40,0.9) 100%);
+            border-radius: 8px;
+        }
+        
+        .satellite-svg {
+            filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
+        }
+        
+        .pulse {
+            animation: pulse 2s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body class="text-white">
+    <!-- Header -->
+    <header class="glass-card m-4 p-6">
+        <div class="flex justify-between items-center">
+            <div class="flex items-center space-x-4">
+                <div class="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center">
+                    <i class="fas fa-satellite text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-3xl font-bold">Mission Control Dashboard</h1>
+                    <p class="text-gray-300">Satellite Health Monitoring System</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-6">
+                <div class="text-right">
+                    <p class="text-sm text-gray-300">Mission Time</p>
+                    <p class="text-xl font-mono" id="mission-time">00:00:00</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-sm text-gray-300">Status</p>
+                    <p class="text-xl font-semibold" id="overall-status">NOMINAL</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Dashboard Grid -->
+    <div class="grid grid-cols-12 gap-4 m-4">
+        <!-- KPI Cards -->
+        <div class="col-span-12">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <!-- Battery Health -->
+                <div class="glass-card p-6 relative overflow-hidden">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <p class="text-gray-300 text-sm">Battery Health</p>
+                            <p class="text-3xl font-bold" id="battery-level">98%</p>
+                        </div>
+                        <div class="status-normal w-12 h-12 rounded-full flex items-center justify-center" id="battery-status">
+                            <i class="fas fa-battery-full text-xl"></i>
+                        </div>
+                    </div>
+                    <div class="w-full bg-gray-700 rounded-full h-2">
+                        <div class="bg-green-500 h-2 rounded-full transition-all duration-500" id="battery-bar" style="width: 98%"></div>
+                    </div>
+                </div>
+
+                <!-- Solar Power -->
+                <div class="glass-card p-6 relative overflow-hidden">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <p class="text-gray-300 text-sm">Solar Power</p>
+                            <p class="text-3xl font-bold" id="solar-power">2.4kW</p>
+                        </div>
+                        <div class="status-normal w-12 h-12 rounded-full flex items-center justify-center" id="solar-status">
+                            <i class="fas fa-solar-panel text-xl"></i>
+                        </div>
+                    </div>
+                    <p class="text-green-400 text-sm">+5% vs expected</p>
+                </div>
+
+                <!-- Temperature -->
+                <div class="glass-card p-6 relative overflow-hidden">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <p class="text-gray-300 text-sm">Temperature</p>
+                            <p class="text-3xl font-bold" id="temperature">23°C</p>
+                        </div>
+                        <div class="status-normal w-12 h-12 rounded-full flex items-center justify-center" id="temp-status">
+                            <i class="fas fa-thermometer-half text-xl"></i>
+                        </div>
+                    </div>
+                    <p class="text-green-400 text-sm">Within nominal range</p>
+                </div>
+
+                <!-- Communication -->
+                <div class="glass-card p-6 relative overflow-hidden">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <p class="text-gray-300 text-sm">Signal Strength</p>
+                            <p class="text-3xl font-bold" id="signal-strength">-85dBm</p>
+                        </div>
+                        <div class="status-normal w-12 h-12 rounded-full flex items-center justify-center" id="signal-status">
+                            <i class="fas fa-signal text-xl"></i>
+                        </div>
+                    </div>
+                    <p class="text-green-400 text-sm">Strong signal</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Left Column - Charts -->
+        <div class="col-span-12 lg:col-span-8">
+            <!-- Telemetry Charts -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                <div class="glass-card p-6">
+                    <h3 class="text-xl font-semibold mb-4">Power Systems</h3>
+                    <div class="chart-container">
+                        <canvas id="powerChart"></canvas>
+                    </div>
+                </div>
+                <div class="glass-card p-6">
+                    <h3 class="text-xl font-semibold mb-4">Thermal Systems</h3>
+                    <div class="chart-container">
+                        <canvas id="thermalChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3D Satellite View -->
+            <div class="glass-card p-6 mb-4">
+                <h3 class="text-xl font-semibold mb-4">3D Satellite Status</h3>
+                <div class="satellite-3d" id="satellite3d">
+                    <!-- Fallback 2D satellite visualization -->
+                    <div class="fallback-satellite hidden" id="fallback-satellite">
+                        <div class="satellite-diagram">
+                            <svg width="100%" height="300" viewBox="0 0 400 300" class="satellite-svg">
+                                <!-- Satellite body -->
+                                <rect x="180" y="120" width="40" height="60" fill="#cccccc" stroke="#888" stroke-width="2" rx="4"/>
+                                
+                                <!-- Solar panels -->
+                                <rect x="100" y="140" width="70" height="20" fill="#003366" stroke="#0066cc" stroke-width="2" rx="2" id="solar-left"/>
+                                <rect x="230" y="140" width="70" height="20" fill="#003366" stroke="#0066cc" stroke-width="2" rx="2" id="solar-right"/>
+                                
+                                <!-- Antenna -->
+                                <line x1="200" y1="120" x2="200" y2="80" stroke="#888" stroke-width="3"/>
+                                <circle cx="200" cy="75" r="8" fill="#ffffff" stroke="#888" stroke-width="2" id="antenna"/>
+                                
+                                <!-- Battery indicator -->
+                                <rect x="185" y="130" width="10" height="15" fill="#00ff00" id="battery-indicator"/>
+                                
+                                <!-- Thermal radiator -->
+                                <rect x="165" y="145" width="8" height="30" fill="#444444" stroke="#666" stroke-width="1" id="radiator"/>
+                                
+                                <!-- Status indicators -->
+                                <circle cx="160" cy="100" r="6" fill="#00ff00" id="status-power" class="pulse"/>
+                                <circle cx="190" cy="100" r="6" fill="#00ff00" id="status-thermal"/>
+                                <circle cx="210" cy="100" r="6" fill="#00ff00" id="status-comm"/>
+                                <circle cx="240" cy="100" r="6" fill="#00ff00" id="status-solar"/>
+                                
+                                <!-- Labels -->
+                                <text x="160" y="95" text-anchor="middle" fill="white" font-size="10">PWR</text>
+                                <text x="190" y="95" text-anchor="middle" fill="white" font-size="10">THM</text>
+                                <text x="210" y="95" text-anchor="middle" fill="white" font-size="10">COM</text>
+                                <text x="240" y="95" text-anchor="middle" fill="white" font-size="10">SOL</text>
+                                
+                                <!-- Earth in background -->
+                                <circle cx="50" cy="250" r="30" fill="#4080ff" opacity="0.3"/>
+                                <text x="50" y="255" text-anchor="middle" fill="white" font-size="12">Earth</text>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Anomaly Timeline -->
+            <div class="glass-card p-6">
+                <h3 class="text-xl font-semibold mb-4">Anomaly Detection Timeline</h3>
+                <div class="chart-container">
+                    <canvas id="anomalyChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column - Alerts & Controls -->
+        <div class="col-span-12 lg:col-span-4">
+            <!-- AI Recommendations -->
+            <div class="glass-card p-6 mb-4">
+                <h3 class="text-xl font-semibold mb-4">AI Recommendations</h3>
+                <div id="recommendations-list" class="space-y-3">
+                    <!-- Recommendations will be populated here -->
+                </div>
+            </div>
+
+            <!-- Failure Simulation -->
+            <div class="glass-card p-6 mb-4">
+                <h3 class="text-xl font-semibold mb-4">Failure Simulation</h3>
+                <div class="space-y-3">
+                    <button class="w-full bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition-colors" onclick="simulateFailure('battery')">
+                        <i class="fas fa-battery-empty mr-2"></i>Battery Overheating
+                    </button>
+                    <button class="w-full bg-orange-600 hover:bg-orange-700 text-white font-medium py-2 px-4 rounded-lg transition-colors" onclick="simulateFailure('solar')">
+                        <i class="fas fa-solar-panel mr-2"></i>Solar Panel Degradation
+                    </button>
+                    <button class="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-medium py-2 px-4 rounded-lg transition-colors" onclick="simulateFailure('thermal')">
+                        <i class="fas fa-thermometer-full mr-2"></i>Thermal Anomaly
+                    </button>
+                    <button class="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 px-4 rounded-lg transition-colors" onclick="simulateFailure('comm')">
+                        <i class="fas fa-signal mr-2"></i>Communication Loss
+                    </button>
+                </div>
+            </div>
+
+            <!-- Natural Language Interface -->
+            <div class="glass-card p-6 mb-4">
+                <h3 class="text-xl font-semibold mb-4">Ask Mission Control</h3>
+                <div class="space-y-3">
+                    <input type="text" id="nl-query" placeholder="Ask about satellite health..." class="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400">
+                    <button onclick="processNLQuery()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors">
+                        <i class="fas fa-search mr-2"></i>Query System
+                    </button>
+                    <div id="nl-response" class="text-sm text-gray-300 bg-gray-800 rounded-lg p-3 min-h-[60px] hidden"></div>
+                </div>
+            </div>
+
+            <!-- Recent Alerts -->
+            <div class="glass-card p-6">
+                <h3 class="text-xl font-semibold mb-4">Recent Alerts</h3>
+                <div id="alerts-list" class="space-y-2 max-h-60 overflow-y-auto">
+                    <!-- Alerts will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="notification-toast" class="notification-toast">
+        <div class="glass-card p-4">
+            <div class="flex items-start space-x-3">
+                <div id="toast-icon" class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <div class="flex-1">
+                    <p id="toast-title" class="font-semibold"></p>
+                    <p id="toast-message" class="text-sm text-gray-300"></p>
+                </div>
+                <button onclick="hideNotification()" class="text-gray-400 hover:text-white">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/telemetry.js"></script>
+    <script src="js/anomaly-detection.js"></script>
+    <script src="js/dashboard.js"></script>
+    <script src="js/3d-satellite.js"></script>
+    <script src="js/recommendations.js"></script>
+    <script src="js/nl-interface.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
