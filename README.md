@@ -100,26 +100,6 @@ This comprehensive satellite health monitoring system represents the next genera
    - Shows AI correlation analysis between subsystems
    - Provides comprehensive crisis management recommendations
 
-### **Judge Interaction Guide**
-
-**Try These Commands:**
-- "What's the satellite status?" - Get comprehensive health report
-- "How is the battery health?" - Detailed battery analysis with predictions
-- "Are there any anomalies?" - Current alerts and AI confidence levels
-- "Simulate battery failure" - Trigger emergency scenario
-- "What are your recommendations?" - Get AI-powered action items
-- Click failure simulation buttons for instant demo scenarios
-- Explore the 3D satellite model by clicking and dragging
-
-## 🏗️ **Technical Architecture**
-
-### **Frontend Technologies**
-- **HTML5**: Semantic structure with accessibility features
-- **CSS3**: Modern styling with CSS Grid, Flexbox, and animations
-- **Vanilla JavaScript**: High-performance ES6+ implementation
-- **Three.js**: 3D satellite visualization and space environment
-- **Chart.js**: Real-time charting with custom space themes
-- **Tailwind CSS**: Utility-first responsive design system
 
 ### **AI/ML Components**
 ```javascript
